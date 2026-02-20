@@ -1,85 +1,17 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8" />
-  <script src="https://apis.google.com/js/api.js"></script>
-  <script src="https://accounts.google.com/gsi/client"></script>
-  <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
+<meta charset="UTF-8">
 </head>
 <body>
 
-<button id="pickBtn" disabled>Google Docs選択</button>
+<button id="pickBtn">Google Docs選択</button>
 
 <script>
-const CLIENT_ID = '653181018114-f2s9giig3d1gepb1u3fh8rpvv85v8bjm.apps.googleusercontent.com';
-const API_KEY = 'AIzaSyCNsc0oqympQTblz-0tB1xOsovnnVjKHEY';
-const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyYqxoq8Vhk9AB9uYSg3RbBmImgiPQauJiyVniEu3HncTLe_Q-BSv-Y4p9ZST0e-AX3dA/exec";
-
-    
-let accessToken;
-let pickerInited = false;
-let gisInited = false;
-let tokenClient;
-
-// --------- ① gapi初期化 ---------
-function gapiLoaded() {
-  gapi.load('client:picker', initializePicker);
-}
-
-async function initializePicker() {
-  await gapi.client.init({
-    apiKey: API_KEY,
-    discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"],
-  });
-  pickerInited = true;
-  maybeEnableButton();
-}
-
-// --------- ② GIS初期化 ---------
-function gisLoaded() {
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: CLIENT_ID,
-    scope: "https://www.googleapis.com/auth/drive.file",
-    callback: '',
-  });
-  gisInited = true;
-  maybeEnableButton();
-}
-
-function maybeEnableButton() {
-  if (pickerInited && gisInited) {
-    document.getElementById('pickBtn').disabled = false;
-  }
-}
-
-// --------- ③ Picker起動 ---------
-document.getElementById('pickBtn').onclick = () => {
-  tokenClient.callback = async (response) => {
-    accessToken = response.access_token;
-
-    const picker = new google.picker.PickerBuilder()
-      .addView(google.picker.ViewId.DOCS)
-      .setOAuthToken(accessToken)
-      .setDeveloperKey(API_KEY)
-      .setCallback(pickerCallback)
-      .build();
-
-    picker.setVisible(true);
+window.onload = function() {
+  document.getElementById("pickBtn").onclick = function() {
+    alert("clicked");
   };
-
-  tokenClient.requestAccessToken();
-};
-
-async function pickerCallback(data) {
-  if (data.action === google.picker.Action.PICKED) {
-    const fileId = data.docs[0].id;
-    alert("選択成功: " + fileId);
-  }
-}
-
-window.onload = () => {
-  gapiLoaded();
-  gisLoaded();
 };
 </script>
 
