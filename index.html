@@ -1,140 +1,81 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Docs to Markdown Converter</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Google API Loader -->
-    <script src="https://apis.google.com/js/api.js"></script>
-    <script src="https://accounts.google.com/gsi/client"></script>
+  <meta charset="UTF-8" />
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script src="https://accounts.google.com/gsi/client"></script>
+  <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
 </head>
-<body class="bg-gray-50 min-h-screen flex items-center justify-center p-4">
+<body>
+  <button onclick="createPicker()">Google Docs選択</button>
 
-    <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center">
-        <h1 class="text-2xl font-bold text-gray-800 mb-6">Docs Converter</h1>
-        <p class="text-gray-600 mb-8 text-sm">
-            Googleドキュメントを選択して、MarkdownとしてGoogleドライブへ保存します。
-        </p>
+<script>
+const CLIENT_ID = '653181018114-f2s9giig3d1gepb1u3fh8rpvv85v8bjm.apps.googleusercontent.com';
+const API_KEY = 'AIzaSyCNsc0oqympQTblz-0tB1xOsovnnVjKHEY';
+const GAS_WEB_APP_URL = 'https://script.goo
+    
+let accessToken;
 
-        <div id="auth_section">
-            <button id="btn_auth" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-all w-full flex items-center justify-center gap-2">
-                <span>Googleドライブに接続</span>
-            </button>
-        </div>
+function initClient() {
+  gapi.load("client:picker", async () => {
+    await gapi.client.init({
+      apiKey: API_KEY,
+      discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"],
+    });
+  });
+}
 
-        <div id="action_section" class="hidden space-y-4">
-            <button id="btn_picker" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-all w-full">
-                ドキュメントを選択する
-            </button>
-            <div id="status" class="text-sm font-medium text-blue-600 animate-pulse hidden">処理中...</div>
-        </div>
+initClient();
 
-        <div id="result" class="mt-6 text-left text-xs text-gray-500 overflow-auto max-h-40 hidden border-t pt-4"></div>
-    </div>
+function createPicker() {
+  const tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: "https://www.googleapis.com/auth/drive.file",
+    callback: (tokenResponse) => {
+      accessToken = tokenResponse.access_token;
 
-    <script>
-        /**
-         * --- 設定値の書き換え ---
-         * 1. CLIENT_ID: GCPコンソールのOAuthクライアントID
-         * 2. API_KEY: GCPコンソールのAPIキー
-         * 3. GAS_WEB_APP_URL: GASで「ウェブアプリとしてデプロイ」した際に発行されるURL
-         */
-        const CLIENT_ID = '653181018114-f2s9giig3d1gepb1u3fh8rpvv85v8bjm.apps.googleusercontent.com';
-        const API_KEY = 'AIzaSyCNsc0oqympQTblz-0tB1xOsovnnVjKHEY';
-        const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwHq8bFe1ZKyOI5_o80ad3x-kKVcntdn_4VuH5ct1fGWdRjOm1SEmHPGl2cR1KZnScnKw/exec'; 
-        
-        const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/documents.readonly';
+      const picker = new google.picker.PickerBuilder()
+        .addView(google.picker.ViewId.DOCS)
+        .setOAuthToken(accessToken)
+        .setDeveloperKey(API_KEY)
+        .setCallback(pickerCallback)
+        .build();
+      picker.setVisible(true);
+    },
+  });
 
-        let accessToken = null;
-        let pickerApiLoaded = false;
+  tokenClient.requestAccessToken();
+}
 
-        // Google APIのロード
-        function gapiLoaded() {
-            gapi.load('picker', () => {
-                pickerApiLoaded = true;
-            });
-        }
+async function pickerCallback(data) {
+  if (data.action === google.picker.Action.PICKED) {
+    const fileId = data.docs[0].id;
+    const name = data.docs[0].name;
 
-        // GIS (Google Identity Services) の初期化
-        const tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: CLIENT_ID,
-            scope: SCOPES,
-            callback: (response) => {
-                if (response.error !== undefined) throw response;
-                accessToken = response.access_token;
-                document.getElementById('auth_section').classList.add('hidden');
-                document.getElementById('action_section').classList.remove('hidden');
-            },
-        });
+    // ① HTML取得
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/html`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
 
-        document.getElementById('btn_auth').onclick = () => {
-            tokenClient.requestAccessToken({ prompt: 'consent' });
-        };
+    const html = await res.text();
 
-        // Pickerの起動
-        document.getElementById('btn_picker').onclick = () => {
-            if (!pickerApiLoaded || !accessToken) return;
+    // ② Markdown変換
+    const turndownService = new TurndownService();
+    const markdown = turndownService.turndown(html);
 
-            const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
-                .setMimeTypes("application/vnd.google-apps.document")
-                .setMode(google.picker.DocsViewMode.LIST);
+    // ③ GASへ保存依頼
+    await fetch(GAS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, markdown }),
+    });
 
-            const picker = new google.picker.PickerBuilder()
-                .enableFeature(google.picker.Feature.NAV_HIDDEN)
-                .enableFeature(google.picker.Feature.MULTISELECT_ENABLED) 
-                .setAppId(CLIENT_ID)
-                .setOAuthToken(accessToken)
-                .addView(view)
-                .setDeveloperKey(API_KEY)
-                .setCallback(pickerCallback)
-                .build();
-            picker.setVisible(true);
-        };
-
-        async function pickerCallback(data) {
-            if (data.action === google.picker.Action.PICKED) {
-                const fileIds = data.docs.map(doc => doc.id);
-                sendToGas(fileIds);
-            }
-        }
-
-        // GAS APIへのPOST送信
-        async function sendToGas(fileIds) {
-            const statusEl = document.getElementById('status');
-            const resultEl = document.getElementById('result');
-            statusEl.classList.remove('hidden');
-            resultEl.classList.add('hidden');
-
-            try {
-                const response = await fetch(GAS_WEB_APP_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ fileIds: fileIds })
-                });
-                const result = await response.json();
-                
-                statusEl.classList.add('hidden');
-                resultEl.classList.remove('hidden');
-                resultEl.innerText = "完了レポート:\n" + JSON.stringify(result, null, 2);
-                
-                if(result.status === "success") {
-                    showToast("Markdown変換と保存が完了しました");
-                }
-            } catch (error) {
-                console.error(error);
-                statusEl.innerText = "通信エラーが発生しました";
-            }
-        }
-
-        function showToast(msg) {
-            const div = document.createElement('div');
-            div.className = "fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded shadow-lg z-50";
-            div.innerText = msg;
-            document.body.appendChild(div);
-            setTimeout(() => div.remove(), 4000);
-        }
-
-        window.onload = gapiLoaded;
-    </script>
+    alert("保存完了");
+  }
+}
+</script>
 </body>
 </html>
