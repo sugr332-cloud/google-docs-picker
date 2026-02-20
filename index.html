@@ -7,7 +7,8 @@
   <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
 </head>
 <body>
-  <button onclick="createPicker()">Google Docs選択</button>
+
+<button id="pickBtn" disabled>Google Docs選択</button>
 
 <script>
 const CLIENT_ID = '653181018114-f2s9giig3d1gepb1u3fh8rpvv85v8bjm.apps.googleusercontent.com';
@@ -16,67 +17,71 @@ const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyYqxoq8Vhk9AB9
 
     
 let accessToken;
+let pickerInited = false;
+let gisInited = false;
+let tokenClient;
 
-function initClient() {
-  gapi.load("client:picker", async () => {
-    await gapi.client.init({
-      apiKey: API_KEY,
-      discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"],
-    });
-  });
+// --------- ① gapi初期化 ---------
+function gapiLoaded() {
+  gapi.load('client:picker', initializePicker);
 }
 
-initClient();
+async function initializePicker() {
+  await gapi.client.init({
+    apiKey: API_KEY,
+    discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"],
+  });
+  pickerInited = true;
+  maybeEnableButton();
+}
 
-function createPicker() {
-  const tokenClient = google.accounts.oauth2.initTokenClient({
+// --------- ② GIS初期化 ---------
+function gisLoaded() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
     scope: "https://www.googleapis.com/auth/drive.file",
-    callback: (tokenResponse) => {
-      accessToken = tokenResponse.access_token;
-
-      const picker = new google.picker.PickerBuilder()
-        .addView(google.picker.ViewId.DOCS)
-        .setOAuthToken(accessToken)
-        .setDeveloperKey(API_KEY)
-        .setCallback(pickerCallback)
-        .build();
-      picker.setVisible(true);
-    },
+    callback: '',
   });
+  gisInited = true;
+  maybeEnableButton();
+}
+
+function maybeEnableButton() {
+  if (pickerInited && gisInited) {
+    document.getElementById('pickBtn').disabled = false;
+  }
+}
+
+// --------- ③ Picker起動 ---------
+document.getElementById('pickBtn').onclick = () => {
+  tokenClient.callback = async (response) => {
+    accessToken = response.access_token;
+
+    const picker = new google.picker.PickerBuilder()
+      .addView(google.picker.ViewId.DOCS)
+      .setOAuthToken(accessToken)
+      .setDeveloperKey(API_KEY)
+      .setCallback(pickerCallback)
+      .build();
+
+    picker.setVisible(true);
+  };
 
   tokenClient.requestAccessToken();
-}
+};
 
 async function pickerCallback(data) {
   if (data.action === google.picker.Action.PICKED) {
     const fileId = data.docs[0].id;
-    const name = data.docs[0].name;
-
-    // ① HTML取得
-    const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/html`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }
-    );
-
-    const html = await res.text();
-
-    // ② Markdown変換
-    const turndownService = new TurndownService();
-    const markdown = turndownService.turndown(html);
-
-    // ③ GASへ保存依頼
-    await fetch(GAS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, markdown }),
-    });
-
-    alert("保存完了");
+    alert("選択成功: " + fileId);
   }
 }
+
+window.onload = () => {
+  gapiLoaded();
+  gisLoaded();
+};
 </script>
+
 </body>
 </html>
